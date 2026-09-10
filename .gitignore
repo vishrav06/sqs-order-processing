@@ -1,0 +1,13 @@
+# Python virtual environment and bytecode cache
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime file written by the workers to count completed orders
+processed.log
+
+# Never commit AWS credentials. Boto3 gets them from the AWS CLI config on the
+# laptop and from the IAM instance role on EC2, so no key ever belongs in here.
+.aws/
+*.pem
+.env
