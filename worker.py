@@ -18,6 +18,7 @@ than once ("at-least-once delivery").
 
 import json
 import os
+import signal
 import sys
 import time
 
@@ -28,6 +29,16 @@ import config
 # When set, the worker abandons its first message instead of finishing it, to
 # demonstrate visibility timeout and redelivery. See Phase 6 of the plan.
 FAIL_ONCE = os.environ.get("FAIL_ONCE") == "1"
+
+# Set by SIGTERM (sent by the autoscaler when scaling down). Unlike Ctrl+C,
+# which interrupts immediately, this lets the worker finish and delete the
+# order it is currently processing before it exits, so nothing is abandoned.
+stopping = False
+
+
+def request_stop(signum, frame):
+    global stopping
+    stopping = True
 
 
 def process(worker_id, order):
@@ -47,10 +58,11 @@ def main():
     client = config.sqs_client()
     url = config.queue_url(client)
     config.log(worker_id, f"waiting for orders, {config.PROCESS_SECONDS}s each (Ctrl+C to stop)")
+    signal.signal(signal.SIGTERM, request_stop)
 
     done = 0
     try:
-        while True:
+        while not stopping:
             try:
                 response = client.receive_message(
                     QueueUrl=url,
@@ -95,6 +107,7 @@ def main():
             done += 1
             config.record_processed(worker_id, order["order_id"])
             config.log(worker_id, f"done {order['order_id']} (total {done})")
+        config.log(worker_id, f"shut down gracefully after processing {done} orders")
     except KeyboardInterrupt:
         config.log(worker_id, f"stopped after processing {done} orders")
 

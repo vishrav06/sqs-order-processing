@@ -2,63 +2,234 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Order Processing with Amazon SQS</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 720px; padding: 0 1rem; }
-    h1 { font-size: 1.4rem; }
-    fieldset { border: 1px solid #ccc; padding: 1rem; }
-    input, button { font-size: 1rem; padding: .4rem; }
-    .stats { display: flex; gap: 1rem; margin-top: 1.5rem; text-align: center; }
-    .stat { flex: 1; border: 1px solid #ccc; padding: .8rem; }
-    .stat .value { font-size: 2.4rem; font-weight: bold; }
-    .stat .label { font-size: .8rem; color: #555; text-transform: uppercase; }
-    .backlog .value { color: #c0392b; }
-    #result { margin-top: .8rem; font-family: monospace; }
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #ff9900;        /* AWS orange */
+      --accent-dark: #e68a00;
+      --navy: #232f3e;          /* AWS navy */
+      --waiting: #dc2626;
+      --progress: #2563eb;
+      --done: #16a34a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      background: var(--navy);
+      color: #fff;
+      padding: 1.2rem 1rem;
+      border-bottom: 4px solid var(--accent);
+    }
+    header .inner { max-width: 860px; margin: 0 auto; }
+    header h1 { margin: 0; font-size: 1.4rem; }
+    header p { margin: .3rem 0 0; color: #cbd5e1; font-size: .9rem; }
+
+    main { max-width: 860px; margin: 1.5rem auto; padding: 0 1rem; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.2rem 1.4rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+      margin-bottom: 1.5rem;
+    }
+    .card h2 {
+      margin: 0 0 1rem;
+      font-size: 1rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+    }
+
+    .form-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+    .field { display: flex; flex-direction: column; gap: .3rem; }
+    .field label { font-size: .85rem; font-weight: 600; }
+
+    input, select {
+      font: inherit;
+      padding: .55rem .7rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+    #quantity { width: 6rem; }
+
+    button {
+      font: inherit;
+      font-weight: 600;
+      padding: .6rem 1.3rem;
+      border: none;
+      border-radius: 6px;
+      background: var(--accent);
+      color: var(--navy);
+      cursor: pointer;
+      transition: background .15s;
+    }
+    button:hover { background: var(--accent-dark); }
+    button:disabled { opacity: .6; cursor: wait; }
+
+    #result {
+      margin-top: 1rem;
+      padding: .6rem .8rem;
+      border-radius: 6px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: .9rem;
+    }
+    #result:empty { display: none; }
+    #result.ok { background: #dcfce7; color: #166534; }
+    #result.err { background: #fee2e2; color: #991b1b; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 1rem;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-top: 4px solid var(--muted);
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+    }
+    .stat .value { font-size: 2.6rem; font-weight: 700; line-height: 1.1; }
+    .stat .label {
+      margin-top: .3rem;
+      font-size: .75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .stat.waiting  { border-top-color: var(--waiting); }
+    .stat.waiting .value  { color: var(--waiting); }
+    .stat.progress { border-top-color: var(--progress); }
+    .stat.progress .value { color: var(--progress); }
+    .stat.done     { border-top-color: var(--done); }
+    .stat.done .value     { color: var(--done); }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      margin-top: 1rem;
+      font-size: .85rem;
+      color: var(--muted);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--done); }
+    .dot.off { background: var(--waiting); }
+
+    footer { text-align: center; color: var(--muted); font-size: .8rem; margin: 2rem 0; }
   </style>
 </head>
 <body>
-  <h1>Order Processing with Amazon SQS</h1>
+  <header>
+    <div class="inner">
+      <h1>Order Processing with Amazon SQS</h1>
+      <p>Orders are queued instantly and processed asynchronously by background workers.</p>
+    </div>
+  </header>
 
-  <fieldset>
-    <legend>Place an order</legend>
-    Product: <input id="product" value="Laptop">
-    Quantity: <input id="quantity" type="number" value="2" min="1" style="width:5rem">
-    <button onclick="placeOrder()">Place order</button>
-    <div id="result"></div>
-  </fieldset>
+  <main>
+    <section class="card">
+      <h2>Place an order</h2>
+      <div class="form-row">
+        <div class="field">
+          <label for="product">Product</label>
+          <select id="product">
+            <option>Laptop</option>
+            <option>Phone</option>
+            <option>Headphones</option>
+            <option>Monitor</option>
+            <option>Keyboard</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="quantity">Quantity</label>
+          <input id="quantity" type="number" value="2" min="1">
+        </div>
+        <button id="submit" onclick="placeOrder()">Place order</button>
+      </div>
+      <div id="result"></div>
+    </section>
 
-  <div class="stats">
-    <div class="stat"><div class="value" id="submitted">0</div><div class="label">Submitted here</div></div>
-    <div class="stat backlog"><div class="value" id="waiting">0</div><div class="label">Waiting in queue</div></div>
-    <div class="stat"><div class="value" id="in_progress">0</div><div class="label">Being processed</div></div>
-    <div class="stat"><div class="value" id="processed">0</div><div class="label">Processed</div></div>
-  </div>
+    <section class="card">
+      <h2>Live queue status</h2>
+      <div class="stats">
+        <div class="stat"><div class="value" id="submitted">0</div><div class="label">Submitted here</div></div>
+        <div class="stat waiting"><div class="value" id="waiting">0</div><div class="label">Waiting in queue</div></div>
+        <div class="stat progress"><div class="value" id="in_progress">0</div><div class="label">Being processed</div></div>
+        <div class="stat done"><div class="value" id="processed">0</div><div class="label">Processed</div></div>
+      </div>
+      <div class="status"><span class="dot" id="dot"></span><span id="updated">Connecting…</span></div>
+    </section>
+  </main>
+
+  <footer>Flask backend &middot; Amazon SQS Standard queue &middot; EC2 workers</footer>
 
   <script>
     // Send the order to the backend, which queues it and replies immediately.
     async function placeOrder() {
+      const button = document.getElementById("submit");
+      const result = document.getElementById("result");
       const body = {
         product: document.getElementById("product").value,
         quantity: Number(document.getElementById("quantity").value)
       };
-      const response = await fetch("/orders", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(body)
-      });
-      const data = await response.json();
-      document.getElementById("result").textContent =
-        data.order_id ? `Queued as ${data.order_id}` : `Error: ${data.error}`;
+      button.disabled = true;
+      try {
+        const response = await fetch("/orders", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body)
+        });
+        const data = await response.json();
+        result.className = data.order_id ? "ok" : "err";
+        result.textContent = data.order_id
+          ? `Queued as ${data.order_id} (HTTP ${response.status})`
+          : `Error: ${data.error}`;
+      } catch (err) {
+        result.className = "err";
+        result.textContent = `Error: could not reach the server`;
+      } finally {
+        button.disabled = false;
+      }
       refresh();
     }
 
     // Poll the backend once a second so the queue depth visibly climbs while
     // the producers outpace the workers, and falls once a worker is added.
     async function refresh() {
-      const stats = await (await fetch("/stats")).json();
-      for (const key of ["submitted_here", "waiting", "in_progress", "processed"]) {
-        const el = document.getElementById(key === "submitted_here" ? "submitted" : key);
-        if (stats[key] !== undefined) el.textContent = stats[key];
+      const dot = document.getElementById("dot");
+      const updated = document.getElementById("updated");
+      try {
+        const stats = await (await fetch("/stats")).json();
+        if (stats.error) throw new Error(stats.error);
+        for (const key of ["submitted_here", "waiting", "in_progress", "processed"]) {
+          const el = document.getElementById(key === "submitted_here" ? "submitted" : key);
+          if (stats[key] !== undefined) el.textContent = stats[key];
+        }
+        dot.classList.remove("off");
+        updated.textContent = `Live, last updated ${new Date().toLocaleTimeString()}`;
+      } catch (err) {
+        dot.classList.add("off");
+        updated.textContent = `Disconnected: ${err.message}`;
       }
     }
 

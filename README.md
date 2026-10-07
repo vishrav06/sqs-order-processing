@@ -76,6 +76,7 @@ invisible for the visibility timeout)  ->  worker processes it  ->  DeleteMessag
 | `producer.py` | Sends orders to the queue. Run several copies to create load. |
 | `worker.py` | Receives, processes and deletes orders. Run several copies to scale. |
 | `app.py` | Flask backend: `POST /orders`, `GET /stats`, serves the dashboard. |
+| `autoscaler.py` | Watches queue depth: starts an extra worker once the backlog reaches `SCALE_AT` (default 200), stops it gracefully once the queue is empty. |
 | `templates/index.html` | Dashboard: place an order, watch live queue depth. |
 | `plan.md` | Development plan and progress log. |
 
